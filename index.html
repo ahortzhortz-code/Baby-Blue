@@ -1,505 +1,624 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, Zap, Droplets, Calendar, Clock, ArrowRight, History, Plus, Trash2, CheckCircle2, BarChart2, CheckSquare } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>บันทึกค่าน้ำค่าไฟ (Muji Style)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Noto Sans Thai -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        body { font-family: 'Noto Sans Thai', sans-serif; }
+        /* ซ่อนลูกศรใน input type number */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; margin: 0; 
+        }
+        .tab-btn.active { background-color: #8B8070; color: white; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+        .tab-btn.inactive { background-color: white; color: #8C847A; border: 1px solid #E0DCD3; }
+        .tab-btn.inactive:hover { background-color: #EBE8E0; }
+    </style>
+</head>
+<body class="min-h-screen bg-[#F7F6F2] text-[#4A453F] p-4 md:p-8 relative">
 
-export default function App() {
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  // ==========================================
-  // STATE MANAGEMENT (with localStorage)
-  // ==========================================
-  
-  // 1. Tab Navigation
-  const [activeTab, setActiveTab] = useState('current'); // 'current' | 'history'
-
-  // 2. ตั้งค่ารอบบิลและเรทราคา
-  const [config, setConfig] = useState(() => {
-    const savedConfig = localStorage.getItem('dormConfig');
-    return savedConfig ? JSON.parse(savedConfig) : {
-      electricRate: 8,
-      waterRate: 18,
-      startDate: todayStr,
-      startElectric: '9693',
-      startWater: '150'
-    };
-  });
-
-  // 3. ประวัติการจดมิเตอร์รายวัน (รอบปัจจุบัน)
-  const [readings, setReadings] = useState(() => {
-    const savedReadings = localStorage.getItem('dormReadings');
-    return savedReadings ? JSON.parse(savedReadings) : [];
-  });
-
-  // 4. ประวัติรายเดือน (สรุปที่ตัดรอบแล้ว)
-  const [monthlyHistory, setMonthlyHistory] = useState(() => {
-    const savedHistory = localStorage.getItem('dormHistory');
-    return savedHistory ? JSON.parse(savedHistory) : [];
-  });
-
-  // 5. ฟอร์มสำหรับจดมิเตอร์ล่าสุด
-  const [newReading, setNewReading] = useState({
-    date: todayStr,
-    electric: '',
-    water: ''
-  });
-
-  // 6. Custom Modal State (แทนที่ alert และ confirm)
-  const [modal, setModal] = useState({ 
-    isOpen: false, 
-    type: 'alert', 
-    message: '', 
-    onConfirm: null 
-  });
-
-  // ==========================================
-  // AUTO SAVE HOOKS
-  // ==========================================
-  useEffect(() => localStorage.setItem('dormConfig', JSON.stringify(config)), [config]);
-  useEffect(() => localStorage.setItem('dormReadings', JSON.stringify(readings)), [readings]);
-  useEffect(() => localStorage.setItem('dormHistory', JSON.stringify(monthlyHistory)), [monthlyHistory]);
-
-  // ==========================================
-  // CALCULATIONS (รอบปัจจุบัน)
-  // ==========================================
-  const sortedReadings = useMemo(() => [...readings].sort((a, b) => new Date(a.date) - new Date(b.date)), [readings]);
-  const latestReading = sortedReadings.length > 0 ? sortedReadings[sortedReadings.length - 1] : null;
-
-  const startElec = parseFloat(config.startElectric) || 0;
-  const startWat = parseFloat(config.startWater) || 0;
-  
-  const currentElec = latestReading ? parseFloat(latestReading.electric) || startElec : startElec;
-  const currentWat = latestReading ? parseFloat(latestReading.water) || startWat : startWat;
-  const currentDate = latestReading ? latestReading.date : config.startDate;
-
-  const elecUsed = Math.max(0, currentElec - startElec);
-  const watUsed = Math.max(0, currentWat - startWat);
-  
-  const elecCost = elecUsed * (parseFloat(config.electricRate) || 0);
-  const watCost = watUsed * (parseFloat(config.waterRate) || 0);
-  const totalCurrentCost = elecCost + watCost;
-
-  const getDaysDiff = (startStr, endStr) => {
-    if (!startStr || !endStr) return 0;
-    const d1 = new Date(startStr); d1.setHours(0,0,0,0);
-    const d2 = new Date(endStr); d2.setHours(0,0,0,0);
-    const diffDays = Math.ceil((d2 - d1) / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 ? diffDays : 0;
-  };
-  const daysPassed = getDaysDiff(config.startDate, currentDate);
-
-  const maxHistoryCost = useMemo(() => {
-    if (monthlyHistory.length === 0) return 0;
-    return Math.max(...monthlyHistory.map(r => r.totalCost));
-  }, [monthlyHistory]);
-
-  // ==========================================
-  // HANDLERS
-  // ==========================================
-  
-  const handleConfigChange = (e) => setConfig(prev => ({ ...prev, [e.target.name]: e.target.value }));
-  const handleReadingChange = (e) => setNewReading(prev => ({ ...prev, [e.target.name]: e.target.value }));
-
-  const handleSaveReading = (e) => {
-    e.preventDefault();
-    if (!newReading.electric && !newReading.water) return;
-
-    const newEntry = {
-      id: Date.now().toString(),
-      date: newReading.date,
-      electric: newReading.electric || (latestReading ? latestReading.electric : config.startElectric),
-      water: newReading.water || (latestReading ? latestReading.water : config.startWater)
-    };
-
-    setReadings([...readings, newEntry]);
-    setNewReading({ date: todayStr, electric: '', water: '' });
-  };
-
-  const deleteReading = (id) => setReadings(readings.filter(r => r.id !== id));
-  const deleteHistory = (id) => setMonthlyHistory(monthlyHistory.filter(h => h.id !== id));
-
-  // ฟังก์ชัน Helper สำหรับเปิด Modal แจ้งเตือน
-  const showAlert = (message) => setModal({ isOpen: true, type: 'alert', message, onConfirm: null });
-  const showConfirm = (message, onConfirm) => setModal({ isOpen: true, type: 'confirm', message, onConfirm });
-
-  const handleEndCycle = () => {
-    if (readings.length === 0 && elecUsed === 0 && watUsed === 0) {
-      showAlert("ยังไม่มีการใช้ไฟ/น้ำ ในรอบบิลนี้ กรุณาบันทึกข้อมูลก่อนทำการตัดรอบครับ");
-      return;
-    }
-
-    showConfirm("ต้องการ 'ตัดรอบบิล' เพื่อบันทึกเป็นประวัติรายเดือนใช่หรือไม่?\n\nระบบจะบันทึกยอดปัจจุบันเข้าประวัติ และตั้งค่ามิเตอร์ล่าสุดเป็นจุดเริ่มต้นของรอบบิลถัดไปให้อัตโนมัติ", () => {
-      const monthNames = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-      const endDateObj = new Date(currentDate);
-      const cycleName = `${monthNames[endDateObj.getMonth()]} ${endDateObj.getFullYear()}`;
-
-      // 1. สร้างประวัติใหม่
-      const historyEntry = {
-        id: Date.now().toString(),
-        cycleName: cycleName,
-        startDate: config.startDate,
-        endDate: currentDate,
-        electricUnits: elecUsed,
-        waterUnits: watUsed,
-        electricCost: elecCost,
-        waterCost: watCost,
-        totalCost: totalCurrentCost,
-        days: daysPassed
-      };
-
-      setMonthlyHistory([...monthlyHistory, historyEntry]);
-
-      // 2. อัปเดต Config เริ่มรอบใหม่
-      setConfig(prev => ({
-        ...prev,
-        startDate: currentDate,
-        startElectric: currentElec.toString(),
-        startWater: currentWat.toString()
-      }));
-
-      // 3. ล้างประวัติรายวัน และย้ายหน้า
-      setReadings([]);
-      setActiveTab('history');
-    });
-  };
-
-  const formatDateThai = (dateString) => {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-    return `${date.getDate()} ${months[date.getMonth()]}`;
-  };
-
-  return (
-    <div className="min-h-screen bg-[#F7F6F2] text-[#4A453F] font-sans p-4 md:p-8 relative">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div class="max-w-5xl mx-auto space-y-6">
         
-        {/* Header & Navigation */}
-        <header className="text-center space-y-4 pt-2 pb-2">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-[#3A3530]">บันทึกค่าน้ำค่าไฟ</h1>
-            <p className="text-[#8C847A] text-sm mt-1">จดเลขมิเตอร์ง่ายๆ พร้อมกราฟประวัติย้อนหลัง</p>
-          </div>
-          
-          <div className="flex justify-center gap-2">
-            <button 
-              onClick={() => setActiveTab('current')}
-              className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${
-                activeTab === 'current' 
-                  ? 'bg-[#8B8070] text-white shadow-sm' 
-                  : 'bg-white text-[#8C847A] hover:bg-[#EBE8E0] border border-[#E0DCD3]'
-              }`}
-            >
-              รอบปัจจุบัน
-            </button>
-            <button 
-              onClick={() => setActiveTab('history')}
-              className={`px-6 py-2 rounded-full text-sm font-medium transition-all ${
-                activeTab === 'history' 
-                  ? 'bg-[#8B8070] text-white shadow-sm' 
-                  : 'bg-white text-[#8C847A] hover:bg-[#EBE8E0] border border-[#E0DCD3]'
-              }`}
-            >
-              ประวัติรายเดือน
-            </button>
-          </div>
+        <!-- Header & Navigation -->
+        <header class="text-center space-y-4 pt-2 pb-2">
+            <div>
+                <h1 class="text-3xl font-semibold tracking-tight text-[#3A3530]">บันทึกค่าน้ำค่าไฟ</h1>
+                <p class="text-[#8C847A] text-sm mt-1">จดเลขมิเตอร์ง่ายๆ พร้อมกราฟประวัติย้อนหลัง</p>
+            </div>
+            
+            <div class="flex justify-center gap-2">
+                <button id="btn-tab-current" onclick="switchTab('current')" class="tab-btn active px-6 py-2 rounded-full text-sm font-medium transition-all">
+                    รอบปัจจุบัน
+                </button>
+                <button id="btn-tab-history" onclick="switchTab('history')" class="tab-btn inactive px-6 py-2 rounded-full text-sm font-medium transition-all">
+                    ประวัติรายเดือน
+                </button>
+            </div>
         </header>
 
-        {/* TAB 1: CURRENT CYCLE */}
-        {activeTab === 'current' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
-            <div className="lg:col-span-5 space-y-6">
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-[#EBE8E0]">
-                <div className="flex items-center gap-2 mb-5 text-[#6A645A] border-b border-[#F2F0EA] pb-3">
-                  <Settings size={20} className="text-[#8B8070]" />
-                  <h2 className="text-lg font-medium flex-1">ตั้งค่ารอบบิลปัจจุบัน</h2>
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-[#8C847A] mb-1">เริ่มตัดรอบวันที่</label>
-                      <input 
-                        type="date" name="startDate" value={config.startDate} onChange={handleConfigChange}
-                        className="w-full bg-[#FAFAFA] border border-[#E0DCD3] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#B5AA9D]"
-                      />
+        <!-- ========================================== -->
+        <!-- TAB 1: CURRENT CYCLE -->
+        <!-- ========================================== -->
+        <div id="tab-current" class="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-[fadeIn_0.3s_ease-in-out]">
+            
+            <!-- ซ้าย: ตั้งค่าและจดมิเตอร์ -->
+            <div class="lg:col-span-5 space-y-6">
+                <!-- ตั้งค่ารอบบิลปัจจุบัน -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-[#EBE8E0]">
+                    <div class="flex items-center gap-2 mb-5 text-[#6A645A] border-b border-[#F2F0EA] pb-3">
+                        <i data-lucide="settings" class="w-5 h-5 text-[#8B8070]"></i>
+                        <h2 class="text-lg font-medium flex-1">ตั้งค่ารอบบิลปัจจุบัน</h2>
                     </div>
-                    <div>
-                      <label className="block text-xs text-[#8C847A] mb-1">ค่าไฟ-น้ำ (บ./หน่วย)</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="number" name="electricRate" value={config.electricRate} onChange={handleConfigChange} placeholder="ไฟ"
-                          className="w-full bg-[#FAFAFA] border border-[#E0DCD3] rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:border-[#B5AA9D] text-[#D4B572] font-medium"
-                        />
-                        <input 
-                          type="number" name="waterRate" value={config.waterRate} onChange={handleConfigChange} placeholder="น้ำ"
-                          className="w-full bg-[#FAFAFA] border border-[#E0DCD3] rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:border-[#B5AA9D] text-[#8FB8DE] font-medium"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-[#FDFAEF] p-3 rounded-lg border border-[#F2EFE6]">
-                      <label className="flex items-center gap-1.5 text-xs text-[#8C847A] mb-1">
-                        <Zap size={14} className="text-[#D4B572]" /> มิเตอร์ไฟเริ่มต้น
-                      </label>
-                      <input 
-                        type="number" name="startElectric" value={config.startElectric} onChange={handleConfigChange}
-                        className="w-full bg-white border border-[#E0DCD3] rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-[#D4B572]"
-                      />
-                    </div>
-                    <div className="bg-[#F0F6FA] p-3 rounded-lg border border-[#E6EEF4]">
-                      <label className="flex items-center gap-1.5 text-xs text-[#8C847A] mb-1">
-                        <Droplets size={14} className="text-[#8FB8DE]" /> มิเตอร์น้ำเริ่มต้น
-                      </label>
-                      <input 
-                        type="number" name="startWater" value={config.startWater} onChange={handleConfigChange}
-                        className="w-full bg-white border border-[#E0DCD3] rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-[#8FB8DE]"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-[#4A453F] p-5 rounded-2xl shadow-sm text-white">
-                <div className="flex items-center gap-2 mb-4 text-[#EBE8E0]">
-                  <Plus size={20} />
-                  <h2 className="text-lg font-medium">จดมิเตอร์วันนี้</h2>
-                </div>
-                <form onSubmit={handleSaveReading} className="space-y-4">
-                  <div>
-                    <label className="block text-xs text-[#A8A096] mb-1">วันที่จด</label>
-                    <input 
-                      type="date" name="date" value={newReading.date} onChange={handleReadingChange}
-                      className="w-full bg-[#5C564F] border border-[#6A645A] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#B5AA9D]"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-[#A8A096] mb-1 flex items-center gap-1">
-                        <Zap size={12} className="text-[#D4B572]"/> เลขมิเตอร์ไฟ
-                      </label>
-                      <input 
-                        type="number" name="electric" value={newReading.electric} onChange={handleReadingChange} placeholder="เช่น 9699"
-                        className="w-full bg-[#5C564F] border border-[#6A645A] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#D4B572]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-[#A8A096] mb-1 flex items-center gap-1">
-                        <Droplets size={12} className="text-[#8FB8DE]"/> เลขมิเตอร์น้ำ
-                      </label>
-                      <input 
-                        type="number" name="water" value={newReading.water} onChange={handleReadingChange} placeholder="เช่น 155"
-                        className="w-full bg-[#5C564F] border border-[#6A645A] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#8FB8DE]"
-                      />
-                    </div>
-                  </div>
-                  <button type="submit" className="w-full mt-2 bg-[#8B8070] hover:bg-[#9B9080] text-white py-2.5 rounded-lg transition-colors text-sm font-medium shadow-sm">
-                    บันทึกมิเตอร์
-                  </button>
-                </form>
-              </div>
-            </div>
-
-            <div className="lg:col-span-7 space-y-6">
-              <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-[#EBE8E0] relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-[#D4B572] via-[#8B8070] to-[#8FB8DE]"></div>
-                
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h2 className="text-xl font-semibold text-[#3A3530]">ยอดสะสมรอบปัจจุบัน</h2>
-                    <p className="text-xs text-[#8C847A] mt-1">ตัดรอบเริ่มวันที่ {formatDateThai(config.startDate)}</p>
-                  </div>
-                  <div className="bg-[#F7F6F2] px-3 py-1.5 rounded-full text-xs font-medium text-[#6A645A] flex items-center gap-1.5">
-                    <Clock size={14} /> ผ่านมาแล้ว {daysPassed} วัน
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm bg-[#FCFBF9] p-4 rounded-xl mb-6 border border-[#F2F0EA]">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-[#8C847A]"><Calendar size={14} /> วันที่เริ่ม</div>
-                    <div className="font-medium">{formatDateThai(config.startDate)} <span className="text-xs text-[#B5AA9D] font-normal">(ไฟ {startElec}, น้ำ {startWat})</span></div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-[#8C847A]"><ArrowRight size={14} /> วันที่ล่าสุด</div>
-                    <div className="font-medium">{formatDateThai(currentDate)} <span className="text-xs text-[#B5AA9D] font-normal">(ไฟ {currentElec}, น้ำ {currentWat})</span></div>
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  <div>
-                    <div className="flex items-center gap-2 mb-2 font-medium text-[#5C564F]">
-                      <Zap size={16} className="text-[#D4B572]" /> การใช้ไฟ
-                    </div>
-                    <div className="pl-6 text-sm space-y-1.5">
-                      <div className="flex justify-between text-[#6A645A]"><span>ใช้ไป: {currentElec} − {startElec}</span><span className="font-medium text-[#4A453F]">{elecUsed} หน่วย</span></div>
-                      <div className="flex justify-between text-[#6A645A]"><span>หน่วยละ:</span><span>{config.electricRate} บาท</span></div>
-                      <div className="flex justify-between text-[#4A453F] pt-1 border-t border-dashed border-[#E0DCD3]"><span>👉 ค่าไฟสะสมตอนนี้</span><span className="font-semibold text-base text-[#B38F42]">{elecCost.toLocaleString()} บาท</span></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 mb-2 font-medium text-[#5C564F]">
-                      <Droplets size={16} className="text-[#8FB8DE]" /> การใช้น้ำ
-                    </div>
-                    <div className="pl-6 text-sm space-y-1.5">
-                      <div className="flex justify-between text-[#6A645A]"><span>ใช้ไป: {currentWat} − {startWat}</span><span className="font-medium text-[#4A453F]">{watUsed} หน่วย</span></div>
-                      <div className="flex justify-between text-[#6A645A]"><span>หน่วยละ:</span><span>{config.waterRate} บาท</span></div>
-                      <div className="flex justify-between text-[#4A453F] pt-1 border-t border-dashed border-[#E0DCD3]"><span>👉 ค่าน้ำสะสมตอนนี้</span><span className="font-semibold text-base text-[#6894BA]">{watCost.toLocaleString()} บาท</span></div>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 flex flex-col sm:flex-row gap-4">
-                    <div className="bg-[#4A453F] text-white p-4 rounded-xl flex-1 flex items-center justify-between shadow-sm">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 size={20} className="text-[#D4B572]" />
-                        <span className="font-medium">ยอดรวม</span>
-                      </div>
-                      <div className="text-2xl font-bold tracking-tight">
-                        {totalCurrentCost.toLocaleString()} <span className="text-sm font-normal text-[#B5AA9D]">บาท</span>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={handleEndCycle}
-                      className="bg-white border-2 border-[#8B8070] text-[#8B8070] hover:bg-[#8B8070] hover:text-white p-4 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                    >
-                      <CheckSquare size={20} />
-                      ตัดรอบบิล
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-2xl shadow-sm border border-[#EBE8E0]">
-                <div className="flex items-center justify-between mb-4 text-[#6A645A]">
-                  <div className="flex items-center gap-2"><History size={18} /><h3 className="font-medium text-sm">ประวัติการจดรายวัน</h3></div>
-                </div>
-                {sortedReadings.length === 0 ? (
-                  <div className="text-center text-sm text-[#B5AA9D] py-4 border border-dashed border-[#EBE8E0] rounded-xl">ยังไม่ได้จดมิเตอร์ในรอบบิลนี้</div>
-                ) : (
-                  <div className="space-y-2">
-                    {sortedReadings.slice().reverse().map((record) => (
-                      <div key={record.id} className="flex items-center justify-between p-3 bg-[#FCFBF9] hover:bg-[#F7F6F2] border border-[#F2F0EA] rounded-xl transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-white px-2 py-1 rounded text-xs font-medium text-[#8C847A] border border-[#EBE8E0]">{formatDateThai(record.date)}</div>
-                          <div className="flex gap-3 text-xs">
-                            <span className="flex items-center gap-1 text-[#6A645A]"><Zap size={12} className="text-[#D4B572]"/> {record.electric}</span>
-                            <span className="flex items-center gap-1 text-[#6A645A]"><Droplets size={12} className="text-[#8FB8DE]"/> {record.water}</span>
-                          </div>
+                    
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-[#8C847A] mb-1">เริ่มตัดรอบวันที่</label>
+                                <input type="date" id="cfg-startDate" class="w-full bg-[#FAFAFA] border border-[#E0DCD3] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#B5AA9D]">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-[#8C847A] mb-1">ค่าไฟ-น้ำ (บ./หน่วย)</label>
+                                <div class="flex gap-2">
+                                    <input type="number" id="cfg-elecRate" placeholder="ไฟ" class="w-full bg-[#FAFAFA] border border-[#E0DCD3] rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:border-[#B5AA9D] text-[#D4B572] font-medium">
+                                    <input type="number" id="cfg-watRate" placeholder="น้ำ" class="w-full bg-[#FAFAFA] border border-[#E0DCD3] rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:border-[#B5AA9D] text-[#8FB8DE] font-medium">
+                                </div>
+                            </div>
                         </div>
-                        <button onClick={() => deleteReading(record.id)} className="text-[#D1ACA5] hover:text-[#B57C72] p-1.5 hover:bg-[#FDF8F7] rounded-md transition-colors"><Trash2 size={14} /></button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* TAB 2: MONTHLY HISTORY */}
-        {activeTab === 'history' && (
-          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-[#EBE8E0] min-h-[60vh] animate-in fade-in duration-300">
-            <div className="flex items-center gap-2 mb-8 text-[#6A645A] border-b border-[#F2F0EA] pb-4">
-              <BarChart2 size={24} className="text-[#8B8070]" />
-              <h2 className="text-xl font-medium">ประวัติการใช้งานรายเดือน</h2>
-            </div>
-
-            {monthlyHistory.length === 0 ? (
-              <div className="h-64 flex flex-col items-center justify-center text-[#B5AA9D] border-2 border-dashed border-[#EBE8E0] rounded-xl">
-                <BarChart2 size={48} className="mb-4 opacity-30" />
-                <p>ยังไม่มีประวัติรายเดือน</p>
-                <p className="text-sm mt-1">ให้กด "ตัดรอบบิล" ในหน้ารอบปัจจุบันเพื่อบันทึกข้อมูลลงที่นี่</p>
-              </div>
-            ) : (
-              <div className="space-y-8">
-                <div className="space-y-4 max-w-2xl mx-auto mb-10 bg-[#FCFBF9] p-6 rounded-2xl border border-[#F2F0EA]">
-                  <h3 className="text-sm font-medium text-[#8C847A] mb-4 text-center">กราฟเปรียบเทียบค่าใช้จ่าย</h3>
-                  {monthlyHistory.map((record) => (
-                    <div key={`chart-${record.id}`} className="space-y-1">
-                      <div className="flex justify-between text-xs text-[#6A645A]">
-                        <span>{record.cycleName}</span>
-                        <span className="font-medium text-[#4A453F]">{record.totalCost.toLocaleString()} ฿</span>
-                      </div>
-                      <div className="h-4 w-full bg-[#EBE8E0] rounded-full overflow-hidden flex">
-                        <div className="h-full bg-[#D4B572] transition-all" style={{ width: `${(record.electricCost / maxHistoryCost) * 100}%` }} title={`ค่าไฟ: ${record.electricCost} บาท`} />
-                        <div className="h-full bg-[#8FB8DE] transition-all" style={{ width: `${(record.waterCost / maxHistoryCost) * 100}%` }} title={`ค่าน้ำ: ${record.waterCost} บาท`} />
-                      </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-[#FDFAEF] p-3 rounded-lg border border-[#F2EFE6]">
+                                <label class="flex items-center gap-1.5 text-xs text-[#8C847A] mb-1">
+                                    <i data-lucide="zap" class="w-3.5 h-3.5 text-[#D4B572]"></i> มิเตอร์ไฟเริ่มต้น
+                                </label>
+                                <input type="number" id="cfg-startElec" class="w-full bg-white border border-[#E0DCD3] rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-[#D4B572]">
+                            </div>
+                            <div class="bg-[#F0F6FA] p-3 rounded-lg border border-[#E6EEF4]">
+                                <label class="flex items-center gap-1.5 text-xs text-[#8C847A] mb-1">
+                                    <i data-lucide="droplets" class="w-3.5 h-3.5 text-[#8FB8DE]"></i> มิเตอร์น้ำเริ่มต้น
+                                </label>
+                                <input type="number" id="cfg-startWat" class="w-full bg-white border border-[#E0DCD3] rounded-md px-3 py-1.5 text-sm focus:outline-none focus:border-[#8FB8DE]">
+                            </div>
+                        </div>
                     </div>
-                  ))}
-                  <div className="flex justify-center gap-6 text-xs text-[#8C847A] pt-4 mt-4 border-t border-[#F2F0EA]">
-                    <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-[#D4B572]"></span> ค่าไฟ</div>
-                    <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-[#8FB8DE]"></span> ค่าน้ำ</div>
-                  </div>
                 </div>
 
-                <div className="space-y-3">
-                  <h3 className="text-sm font-medium text-[#8C847A] mb-2">รายละเอียดบิลย้อนหลัง</h3>
-                  {monthlyHistory.slice().reverse().map((record) => (
-                    <div key={record.id} className="p-5 bg-white border border-[#EBE8E0] rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:shadow-sm transition-shadow">
-                      <div>
-                        <div className="flex items-center gap-3 mb-1">
-                          <h3 className="font-semibold text-lg text-[#3A3530]">{record.cycleName}</h3>
-                          <span className="text-xs bg-[#F7F6F2] text-[#8C847A] px-2 py-1 rounded-md">{record.days} วัน</span>
+                <!-- จดมิเตอร์วันนี้ -->
+                <div class="bg-[#4A453F] p-5 rounded-2xl shadow-sm text-white">
+                    <div class="flex items-center gap-2 mb-4 text-[#EBE8E0]">
+                        <i data-lucide="plus" class="w-5 h-5"></i>
+                        <h2 class="text-lg font-medium">จดมิเตอร์วันนี้</h2>
+                    </div>
+                    <form id="form-reading" class="space-y-4">
+                        <div>
+                            <label class="block text-xs text-[#A8A096] mb-1">วันที่จด</label>
+                            <input type="date" id="nr-date" class="w-full bg-[#5C564F] border border-[#6A645A] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#B5AA9D]">
                         </div>
-                        <p className="text-xs text-[#8C847A] mb-2">รอบ: {formatDateThai(record.startDate)} - {formatDateThai(record.endDate)}</p>
-                        <div className="text-sm text-[#6A645A] flex gap-4">
-                          <span className="flex items-center gap-1"><Zap size={14} className="text-[#D4B572]"/> {record.electricUnits} หน่วย</span>
-                          <span className="flex items-center gap-1"><Droplets size={14} className="text-[#8FB8DE]"/> {record.waterUnits} หน่วย</span>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-[#A8A096] mb-1 flex items-center gap-1">
+                                    <i data-lucide="zap" class="w-3 h-3 text-[#D4B572]"></i> เลขมิเตอร์ไฟ
+                                </label>
+                                <input type="number" id="nr-elec" placeholder="เช่น 9699" class="w-full bg-[#5C564F] border border-[#6A645A] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#D4B572]">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-[#A8A096] mb-1 flex items-center gap-1">
+                                    <i data-lucide="droplets" class="w-3 h-3 text-[#8FB8DE]"></i> เลขมิเตอร์น้ำ
+                                </label>
+                                <input type="number" id="nr-water" placeholder="เช่น 155" class="w-full bg-[#5C564F] border border-[#6A645A] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#8FB8DE]">
+                            </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-[#F2F0EA] pt-3 sm:pt-0">
-                        <div className="text-right">
-                          <p className="text-xl font-bold text-[#4A453F]">{record.totalCost.toLocaleString()} ฿</p>
-                          <p className="text-xs text-[#8C847A]">(ไฟ {record.electricCost.toLocaleString()} + น้ำ {record.waterCost.toLocaleString()})</p>
-                        </div>
-                        <button onClick={() => deleteHistory(record.id)} className="text-[#D1ACA5] hover:text-[#B57C72] p-2 hover:bg-[#FDF8F7] rounded-lg transition-colors" title="ลบข้อมูล">
-                          <Trash2 size={18} />
+                        <button type="submit" class="w-full mt-2 bg-[#8B8070] hover:bg-[#9B9080] text-white py-2.5 rounded-lg transition-colors text-sm font-medium shadow-sm">
+                            บันทึกมิเตอร์
                         </button>
-                      </div>
-                    </div>
-                  ))}
+                    </form>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
-
-      {/* ========================================================= */}
-      {/* CUSTOM MODAL OVERLAY */}
-      {/* ========================================================= */}
-      {modal.isOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
-            <h3 className="text-lg font-medium text-[#3A3530] mb-3">
-              {modal.type === 'confirm' ? 'ยืนยันการดำเนินการ' : 'แจ้งเตือน'}
-            </h3>
-            <p className="text-[#6A645A] text-sm mb-6 whitespace-pre-wrap leading-relaxed">
-              {modal.message}
-            </p>
-            <div className="flex justify-end gap-3">
-              {modal.type === 'confirm' && (
-                <button 
-                  onClick={() => setModal({ ...modal, isOpen: false })}
-                  className="px-4 py-2.5 text-sm font-medium text-[#6A645A] hover:bg-[#F2F0EA] rounded-xl transition-colors"
-                >
-                  ยกเลิก
-                </button>
-              )}
-              <button 
-                onClick={() => {
-                  if (modal.onConfirm) modal.onConfirm();
-                  setModal({ ...modal, isOpen: false });
-                }}
-                className="px-5 py-2.5 text-sm font-medium bg-[#8B8070] text-white hover:bg-[#7A6F60] rounded-xl transition-colors shadow-sm"
-              >
-                ตกลง
-              </button>
             </div>
-          </div>
+
+            <!-- ขวา: สรุปยอด และประวัติรายวัน -->
+            <div class="lg:col-span-7 space-y-6">
+                <!-- ยอดสะสมรอบปัจจุบัน -->
+                <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-[#EBE8E0] relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-[#D4B572] via-[#8B8070] to-[#8FB8DE]"></div>
+                    
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 class="text-xl font-semibold text-[#3A3530]">ยอดสะสมรอบปัจจุบัน</h2>
+                            <p class="text-xs text-[#8C847A] mt-1">ตัดรอบเริ่มวันที่ <span id="sum-header-date">-</span></p>
+                        </div>
+                        <div class="bg-[#F7F6F2] px-3 py-1.5 rounded-full text-xs font-medium text-[#6A645A] flex items-center gap-1.5">
+                            <i data-lucide="clock" class="w-3.5 h-3.5"></i> ผ่านมาแล้ว <span id="sum-days">0</span> วัน
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4 text-sm bg-[#FCFBF9] p-4 rounded-xl mb-6 border border-[#F2F0EA]">
+                        <div class="space-y-1">
+                            <div class="flex items-center gap-1.5 text-[#8C847A]"><i data-lucide="calendar" class="w-3.5 h-3.5"></i> วันที่เริ่ม</div>
+                            <div class="font-medium"><span id="sum-start-date">-</span> <span class="text-xs text-[#B5AA9D] font-normal" id="sum-start-meters"></span></div>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="flex items-center gap-1.5 text-[#8C847A]"><i data-lucide="arrow-right" class="w-3.5 h-3.5"></i> วันที่ล่าสุด</div>
+                            <div class="font-medium"><span id="sum-latest-date">-</span> <span class="text-xs text-[#B5AA9D] font-normal" id="sum-latest-meters"></span></div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-5">
+                        <!-- การใช้ไฟ -->
+                        <div>
+                            <div class="flex items-center gap-2 mb-2 font-medium text-[#5C564F]">
+                                <i data-lucide="zap" class="w-4 h-4 text-[#D4B572]"></i> การใช้ไฟ
+                            </div>
+                            <div class="pl-6 text-sm space-y-1.5">
+                                <div class="flex justify-between text-[#6A645A]">
+                                    <span id="sum-elec-calc">ใช้ไป: 0 − 0</span>
+                                    <span class="font-medium text-[#4A453F]"><span id="sum-elec-used">0</span> หน่วย</span>
+                                </div>
+                                <div class="flex justify-between text-[#6A645A]">
+                                    <span>หน่วยละ:</span>
+                                    <span><span id="sum-elec-rate">0</span> บาท</span>
+                                </div>
+                                <div class="flex justify-between text-[#4A453F] pt-1 border-t border-dashed border-[#E0DCD3]">
+                                    <span>👉 ค่าไฟสะสมตอนนี้</span>
+                                    <span class="font-semibold text-base text-[#B38F42]"><span id="sum-elec-cost">0</span> บาท</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- การใช้น้ำ -->
+                        <div>
+                            <div class="flex items-center gap-2 mb-2 font-medium text-[#5C564F]">
+                                <i data-lucide="droplets" class="w-4 h-4 text-[#8FB8DE]"></i> การใช้น้ำ
+                            </div>
+                            <div class="pl-6 text-sm space-y-1.5">
+                                <div class="flex justify-between text-[#6A645A]">
+                                    <span id="sum-wat-calc">ใช้ไป: 0 − 0</span>
+                                    <span class="font-medium text-[#4A453F]"><span id="sum-wat-used">0</span> หน่วย</span>
+                                </div>
+                                <div class="flex justify-between text-[#6A645A]">
+                                    <span>หน่วยละ:</span>
+                                    <span><span id="sum-wat-rate">0</span> บาท</span>
+                                </div>
+                                <div class="flex justify-between text-[#4A453F] pt-1 border-t border-dashed border-[#E0DCD3]">
+                                    <span>👉 ค่าน้ำสะสมตอนนี้</span>
+                                    <span class="font-semibold text-base text-[#6894BA]"><span id="sum-wat-cost">0</span> บาท</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ยอดรวม -->
+                        <div class="mt-6 flex flex-col sm:flex-row gap-4">
+                            <div class="bg-[#4A453F] text-white p-4 rounded-xl flex-1 flex items-center justify-between shadow-sm">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="check-circle-2" class="w-5 h-5 text-[#D4B572]"></i>
+                                    <span class="font-medium">ยอดรวม</span>
+                                </div>
+                                <div class="text-2xl font-bold tracking-tight">
+                                    <span id="sum-total-cost">0</span> <span class="text-sm font-normal text-[#B5AA9D]">บาท</span>
+                                </div>
+                            </div>
+                            <button onclick="handleEndCycle()" class="bg-white border-2 border-[#8B8070] text-[#8B8070] hover:bg-[#8B8070] hover:text-white p-4 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
+                                <i data-lucide="check-square" class="w-5 h-5"></i> ตัดรอบบิล
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ประวัติการจดรายวัน -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-[#EBE8E0]">
+                    <div class="flex items-center justify-between mb-4 text-[#6A645A]">
+                        <div class="flex items-center gap-2"><i data-lucide="history" class="w-4.5 h-4.5"></i><h3 class="font-medium text-sm">ประวัติการจดรายวัน</h3></div>
+                    </div>
+                    <div id="readings-container" class="space-y-2">
+                        <!-- รายการจะถูกสร้างด้วย JS -->
+                    </div>
+                </div>
+            </div>
         </div>
-      )}
+
+        <!-- ========================================== -->
+        <!-- TAB 2: MONTHLY HISTORY -->
+        <!-- ========================================== -->
+        <div id="tab-history" class="hidden bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-[#EBE8E0] min-h-[60vh] animate-[fadeIn_0.3s_ease-in-out]">
+            <div class="flex items-center gap-2 mb-8 text-[#6A645A] border-b border-[#F2F0EA] pb-4">
+                <i data-lucide="bar-chart-2" class="w-6 h-6 text-[#8B8070]"></i>
+                <h2 class="text-xl font-medium">ประวัติการใช้งานรายเดือน</h2>
+            </div>
+            <div id="history-container">
+                <!-- รายการประวัติรายเดือนจะถูกสร้างด้วย JS -->
+            </div>
+        </div>
 
     </div>
-  );
-}
+
+    <!-- ========================================== -->
+    <!-- CUSTOM MODAL -->
+    <!-- ========================================== -->
+    <div id="custom-modal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-[fadeIn_0.2s_ease-in-out]">
+        <div class="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 id="modal-title" class="text-lg font-medium text-[#3A3530] mb-3">แจ้งเตือน</h3>
+            <p id="modal-message" class="text-[#6A645A] text-sm mb-6 whitespace-pre-wrap leading-relaxed"></p>
+            <div class="flex justify-end gap-3">
+                <button id="modal-cancel-btn" class="hidden px-4 py-2.5 text-sm font-medium text-[#6A645A] hover:bg-[#F2F0EA] rounded-xl transition-colors">
+                    ยกเลิก
+                </button>
+                <button id="modal-confirm-btn" class="px-5 py-2.5 text-sm font-medium bg-[#8B8070] text-white hover:bg-[#7A6F60] rounded-xl transition-colors shadow-sm">
+                    ตกลง
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- State Management ---
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        let config = JSON.parse(localStorage.getItem('dormConfig')) || {
+            electricRate: 8, waterRate: 18, startDate: todayStr, startElectric: '9693', startWater: '150'
+        };
+        let readings = JSON.parse(localStorage.getItem('dormReadings')) || [];
+        let monthlyHistory = JSON.parse(localStorage.getItem('dormHistory')) || [];
+
+        // Save functions
+        const saveConfig = () => localStorage.setItem('dormConfig', JSON.stringify(config));
+        const saveReadings = () => localStorage.setItem('dormReadings', JSON.stringify(readings));
+        const saveHistory = () => localStorage.setItem('dormHistory', JSON.stringify(monthlyHistory));
+
+        // Format Date Thai
+        const formatDateThai = (dateString) => {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+            return `${date.getDate()} ${months[date.getMonth()]}`;
+        };
+
+        // Date Difference
+        const getDaysDiff = (startStr, endStr) => {
+            if (!startStr || !endStr) return 0;
+            const d1 = new Date(startStr); d1.setHours(0,0,0,0);
+            const d2 = new Date(endStr); d2.setHours(0,0,0,0);
+            const diffDays = Math.ceil((d2 - d1) / (1000 * 60 * 60 * 24));
+            return diffDays >= 0 ? diffDays : 0;
+        };
+
+        // --- DOM Elements ---
+        // Config inputs
+        const elCfgStart = document.getElementById('cfg-startDate');
+        const elCfgElecRate = document.getElementById('cfg-elecRate');
+        const elCfgWatRate = document.getElementById('cfg-watRate');
+        const elCfgStartElec = document.getElementById('cfg-startElec');
+        const elCfgStartWat = document.getElementById('cfg-startWat');
+        
+        // New Reading inputs
+        const elNrDate = document.getElementById('nr-date');
+        const elNrElec = document.getElementById('nr-elec');
+        const elNrWat = document.getElementById('nr-water');
+
+        // --- Initialization ---
+        function initApp() {
+            // Set Config form values
+            elCfgStart.value = config.startDate;
+            elCfgElecRate.value = config.electricRate;
+            elCfgWatRate.value = config.waterRate;
+            elCfgStartElec.value = config.startElectric;
+            elCfgStartWat.value = config.startWater;
+            
+            // Set New Reading default date
+            elNrDate.value = todayStr;
+
+            updateViews();
+            lucide.createIcons();
+        }
+
+        // --- Event Listeners for Config ---
+        const updateConfigAndRender = () => {
+            config = {
+                startDate: elCfgStart.value,
+                electricRate: parseFloat(elCfgElecRate.value) || 0,
+                waterRate: parseFloat(elCfgWatRate.value) || 0,
+                startElectric: elCfgStartElec.value,
+                startWater: elCfgStartWat.value
+            };
+            saveConfig();
+            updateViews();
+        };
+
+        ['cfg-startDate', 'cfg-elecRate', 'cfg-watRate', 'cfg-startElec', 'cfg-startWat'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateConfigAndRender);
+        });
+
+        // --- Event Listener for New Reading ---
+        document.getElementById('form-reading').addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (!elNrElec.value && !elNrWat.value) return;
+
+            // Sort logic to find latest
+            const sorted = [...readings].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const latest = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+
+            const newEntry = {
+                id: Date.now().toString(),
+                date: elNrDate.value,
+                electric: elNrElec.value || (latest ? latest.electric : config.startElectric),
+                water: elNrWat.value || (latest ? latest.water : config.startWater)
+            };
+
+            readings.push(newEntry);
+            saveReadings();
+            updateViews();
+            
+            // Clear form
+            elNrDate.value = todayStr;
+            elNrElec.value = '';
+            elNrWat.value = '';
+        });
+
+        // --- Delete Functions ---
+        window.deleteReading = (id) => {
+            readings = readings.filter(r => r.id !== id);
+            saveReadings();
+            updateViews();
+        };
+
+        window.deleteHistory = (id) => {
+            monthlyHistory = monthlyHistory.filter(h => h.id !== id);
+            saveHistory();
+            updateViews();
+        };
+
+        // --- Update Views Logic ---
+        function updateViews() {
+            const sorted = [...readings].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const latest = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+
+            const startE = parseFloat(config.startElectric) || 0;
+            const startW = parseFloat(config.startWater) || 0;
+            
+            const currE = latest ? parseFloat(latest.electric) || startE : startE;
+            const currW = latest ? parseFloat(latest.water) || startW : startW;
+            const currDate = latest ? latest.date : config.startDate;
+
+            const elecUsed = Math.max(0, currE - startE);
+            const watUsed = Math.max(0, currW - startW);
+            
+            const elecCost = elecUsed * config.electricRate;
+            const watCost = watUsed * config.waterRate;
+            const totalCost = elecCost + watCost;
+            
+            const daysPassed = getDaysDiff(config.startDate, currDate);
+
+            // Update DOM Summary
+            document.getElementById('sum-header-date').innerText = formatDateThai(config.startDate);
+            document.getElementById('sum-days').innerText = daysPassed;
+            document.getElementById('sum-start-date').innerText = formatDateThai(config.startDate);
+            document.getElementById('sum-start-meters').innerText = `(ไฟ ${startE}, น้ำ ${startW})`;
+            document.getElementById('sum-latest-date').innerText = formatDateThai(currDate);
+            document.getElementById('sum-latest-meters').innerText = `(ไฟ ${currE}, น้ำ ${currW})`;
+
+            document.getElementById('sum-elec-calc').innerText = `ใช้ไป: ${currE} − ${startE}`;
+            document.getElementById('sum-elec-used').innerText = elecUsed;
+            document.getElementById('sum-elec-rate').innerText = config.electricRate;
+            document.getElementById('sum-elec-cost').innerText = elecCost.toLocaleString();
+
+            document.getElementById('sum-wat-calc').innerText = `ใช้ไป: ${currW} − ${startW}`;
+            document.getElementById('sum-wat-used').innerText = watUsed;
+            document.getElementById('sum-wat-rate').innerText = config.waterRate;
+            document.getElementById('sum-wat-cost').innerText = watCost.toLocaleString();
+
+            document.getElementById('sum-total-cost').innerText = totalCost.toLocaleString();
+
+            // Render Readings List
+            const readingsContainer = document.getElementById('readings-container');
+            if (sorted.length === 0) {
+                readingsContainer.innerHTML = `<div class="text-center text-sm text-[#B5AA9D] py-4 border border-dashed border-[#EBE8E0] rounded-xl">ยังไม่ได้จดมิเตอร์ในรอบบิลนี้</div>`;
+            } else {
+                readingsContainer.innerHTML = sorted.slice().reverse().map(record => `
+                    <div class="flex items-center justify-between p-3 bg-[#FCFBF9] hover:bg-[#F7F6F2] border border-[#F2F0EA] rounded-xl transition-colors">
+                        <div class="flex items-center gap-3">
+                            <div class="bg-white px-2 py-1 rounded text-xs font-medium text-[#8C847A] border border-[#EBE8E0]">${formatDateThai(record.date)}</div>
+                            <div class="flex gap-3 text-xs">
+                                <span class="flex items-center gap-1 text-[#6A645A]"><i data-lucide="zap" class="w-3 h-3 text-[#D4B572]"></i> ${record.electric}</span>
+                                <span class="flex items-center gap-1 text-[#6A645A]"><i data-lucide="droplets" class="w-3 h-3 text-[#8FB8DE]"></i> ${record.water}</span>
+                            </div>
+                        </div>
+                        <button onclick="deleteReading('${record.id}')" class="text-[#D1ACA5] hover:text-[#B57C72] p-1.5 hover:bg-[#FDF8F7] rounded-md transition-colors"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                    </div>
+                `).join('');
+            }
+
+            // Render History List
+            const historyContainer = document.getElementById('history-container');
+            if (monthlyHistory.length === 0) {
+                historyContainer.innerHTML = `
+                    <div class="h-64 flex flex-col items-center justify-center text-[#B5AA9D] border-2 border-dashed border-[#EBE8E0] rounded-xl">
+                        <i data-lucide="bar-chart-2" class="w-12 h-12 mb-4 opacity-30"></i>
+                        <p>ยังไม่มีประวัติรายเดือน</p>
+                        <p class="text-sm mt-1">ให้กด "ตัดรอบบิล" ในหน้ารอบปัจจุบันเพื่อบันทึกข้อมูลลงที่นี่</p>
+                    </div>`;
+            } else {
+                const maxCost = Math.max(...monthlyHistory.map(r => r.totalCost));
+                
+                let chartHTML = `<div class="space-y-4 max-w-2xl mx-auto mb-10 bg-[#FCFBF9] p-6 rounded-2xl border border-[#F2F0EA]">
+                    <h3 class="text-sm font-medium text-[#8C847A] mb-4 text-center">กราฟเปรียบเทียบค่าใช้จ่าย</h3>`;
+                
+                monthlyHistory.forEach(record => {
+                    chartHTML += `
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-xs text-[#6A645A]">
+                                <span>${record.cycleName}</span>
+                                <span class="font-medium text-[#4A453F]">${record.totalCost.toLocaleString()} ฿</span>
+                            </div>
+                            <div class="h-4 w-full bg-[#EBE8E0] rounded-full overflow-hidden flex">
+                                <div class="h-full bg-[#D4B572] transition-all" style="width: ${(record.electricCost/maxCost)*100}%" title="ค่าไฟ: ${record.electricCost} บาท"></div>
+                                <div class="h-full bg-[#8FB8DE] transition-all" style="width: ${(record.waterCost/maxCost)*100}%" title="ค่าน้ำ: ${record.waterCost} บาท"></div>
+                            </div>
+                        </div>`;
+                });
+                chartHTML += `
+                    <div class="flex justify-center gap-6 text-xs text-[#8C847A] pt-4 mt-4 border-t border-[#F2F0EA]">
+                        <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-[#D4B572]"></span> ค่าไฟ</div>
+                        <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-[#8FB8DE]"></span> ค่าน้ำ</div>
+                    </div>
+                </div>`;
+
+                let listHTML = `<div class="space-y-3"><h3 class="text-sm font-medium text-[#8C847A] mb-2">รายละเอียดบิลย้อนหลัง</h3>`;
+                monthlyHistory.slice().reverse().forEach(record => {
+                    listHTML += `
+                        <div class="p-5 bg-white border border-[#EBE8E0] rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:shadow-sm transition-shadow">
+                            <div>
+                                <div class="flex items-center gap-3 mb-1">
+                                    <h3 class="font-semibold text-lg text-[#3A3530]">${record.cycleName}</h3>
+                                    <span class="text-xs bg-[#F7F6F2] text-[#8C847A] px-2 py-1 rounded-md">${record.days} วัน</span>
+                                </div>
+                                <p class="text-xs text-[#8C847A] mb-2">รอบ: ${formatDateThai(record.startDate)} - ${formatDateThai(record.endDate)}</p>
+                                <div class="text-sm text-[#6A645A] flex gap-4">
+                                    <span class="flex items-center gap-1"><i data-lucide="zap" class="w-3.5 h-3.5 text-[#D4B572]"></i> ${record.electricUnits} หน่วย</span>
+                                    <span class="flex items-center gap-1"><i data-lucide="droplets" class="w-3.5 h-3.5 text-[#8FB8DE]"></i> ${record.waterUnits} หน่วย</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-[#F2F0EA] pt-3 sm:pt-0">
+                                <div class="text-right">
+                                    <p class="text-xl font-bold text-[#4A453F]">${record.totalCost.toLocaleString()} ฿</p>
+                                    <p class="text-xs text-[#8C847A]">(ไฟ ${record.electricCost.toLocaleString()} + น้ำ ${record.waterCost.toLocaleString()})</p>
+                                </div>
+                                <button onclick="deleteHistory('${record.id}')" class="text-[#D1ACA5] hover:text-[#B57C72] p-2 hover:bg-[#FDF8F7] rounded-lg transition-colors"><i data-lucide="trash-2" class="w-4.5 h-4.5"></i></button>
+                            </div>
+                        </div>`;
+                });
+                listHTML += `</div>`;
+                
+                historyContainer.innerHTML = chartHTML + listHTML;
+            }
+
+            lucide.createIcons();
+        }
+
+        // --- Custom Modal Logic ---
+        let modalConfirmCallback = null;
+        const elModal = document.getElementById('custom-modal');
+        const elModalTitle = document.getElementById('modal-title');
+        const elModalMessage = document.getElementById('modal-message');
+        const elModalCancel = document.getElementById('modal-cancel-btn');
+        const elModalConfirm = document.getElementById('modal-confirm-btn');
+
+        function showAlert(msg) {
+            elModalTitle.innerText = "แจ้งเตือน";
+            elModalMessage.innerText = msg;
+            elModalCancel.classList.add('hidden');
+            modalConfirmCallback = null;
+            elModal.classList.remove('hidden');
+        }
+
+        function showConfirm(msg, callback) {
+            elModalTitle.innerText = "ยืนยันการดำเนินการ";
+            elModalMessage.innerText = msg;
+            elModalCancel.classList.remove('hidden');
+            modalConfirmCallback = callback;
+            elModal.classList.remove('hidden');
+        }
+
+        elModalCancel.addEventListener('click', () => {
+            elModal.classList.add('hidden');
+            modalConfirmCallback = null;
+        });
+
+        elModalConfirm.addEventListener('click', () => {
+            if (modalConfirmCallback) modalConfirmCallback();
+            elModal.classList.add('hidden');
+        });
+
+        // --- End Cycle (ตัดรอบบิล) ---
+        window.handleEndCycle = () => {
+            const sorted = [...readings].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const latest = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+
+            const startE = parseFloat(config.startElectric) || 0;
+            const startW = parseFloat(config.startWater) || 0;
+            const currE = latest ? parseFloat(latest.electric) || startE : startE;
+            const currW = latest ? parseFloat(latest.water) || startW : startW;
+            const currDate = latest ? latest.date : config.startDate;
+
+            const elecUsed = Math.max(0, currE - startE);
+            const watUsed = Math.max(0, currW - startW);
+
+            if (readings.length === 0 && elecUsed === 0 && watUsed === 0) {
+                showAlert("ยังไม่มีการใช้ไฟ/น้ำ ในรอบบิลนี้ กรุณาบันทึกข้อมูลก่อนทำการตัดรอบครับ");
+                return;
+            }
+
+            showConfirm("ต้องการ 'ตัดรอบบิล' เพื่อบันทึกเป็นประวัติรายเดือนใช่หรือไม่?\n\nระบบจะบันทึกยอดปัจจุบันเข้าประวัติ และตั้งค่ามิเตอร์ล่าสุดเป็นจุดเริ่มต้นของรอบบิลถัดไปให้อัตโนมัติ", () => {
+                const monthNames = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+                const endDateObj = new Date(currDate);
+                const cycleName = `${monthNames[endDateObj.getMonth()]} ${endDateObj.getFullYear()}`;
+
+                const historyEntry = {
+                    id: Date.now().toString(),
+                    cycleName: cycleName,
+                    startDate: config.startDate,
+                    endDate: currDate,
+                    electricUnits: elecUsed,
+                    waterUnits: watUsed,
+                    electricCost: elecUsed * config.electricRate,
+                    waterCost: watUsed * config.waterRate,
+                    totalCost: (elecUsed * config.electricRate) + (watUsed * config.waterRate),
+                    days: getDaysDiff(config.startDate, currDate)
+                };
+
+                monthlyHistory.push(historyEntry);
+                saveHistory();
+
+                config.startDate = currDate;
+                config.startElectric = currE.toString();
+                config.startWater = currW.toString();
+                
+                elCfgStart.value = config.startDate;
+                elCfgStartElec.value = config.startElectric;
+                elCfgStartWat.value = config.startWater;
+                saveConfig();
+
+                readings = [];
+                saveReadings();
+                updateViews();
+                
+                switchTab('history');
+            });
+        };
+
+        // --- Tab Switching ---
+        window.switchTab = (tabId) => {
+            const tabCurrent = document.getElementById('tab-current');
+            const tabHistory = document.getElementById('tab-history');
+            const btnCurrent = document.getElementById('btn-tab-current');
+            const btnHistory = document.getElementById('btn-tab-history');
+
+            if (tabId === 'current') {
+                tabCurrent.classList.remove('hidden');
+                tabHistory.classList.add('hidden');
+                btnCurrent.className = "tab-btn active px-6 py-2 rounded-full text-sm font-medium transition-all";
+                btnHistory.className = "tab-btn inactive px-6 py-2 rounded-full text-sm font-medium transition-all";
+            } else {
+                tabCurrent.classList.add('hidden');
+                tabHistory.classList.remove('hidden');
+                btnHistory.className = "tab-btn active px-6 py-2 rounded-full text-sm font-medium transition-all";
+                btnCurrent.className = "tab-btn inactive px-6 py-2 rounded-full text-sm font-medium transition-all";
+            }
+        };
+
+        // Start app
+        initApp();
+
+    </script>
+</body>
+</html>
